@@ -1,0 +1,30 @@
+﻿:root { font-family: Inter, system-ui, sans-serif; color: #e2e8f0; background: #020617; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at top, #1e1b4b 0%, #020617 55%); }
+.layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+.sidebar { padding: 28px; border-right: 1px solid #1e293b; background: rgba(2, 6, 23, 0.8); }
+.sidebar h1 { font-size: 1.2rem; margin: 0 0 20px; }
+.sidebar nav { display: grid; gap: 10px; }
+.sidebar button { border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 12px; text-align: left; }
+.sidebar button.active { background: #312e81; border-color: #818cf8; }
+main { padding: 30px; }
+.panel { background: rgba(15, 23, 42, 0.9); border: 1px solid #334155; border-radius: 18px; padding: 20px; }
+.badge-row { margin: 10px 0 16px; }
+.badge { padding: 6px 10px; border-radius: 999px; text-transform: uppercase; font-size: 12px; }
+.badge.idle { background: #334155; }
+.badge.hunting { background: #1d4ed8; }
+.badge.shiny_found { background: #a855f7; color: #fff; }
+.metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 20px; }
+.card { background: #0b1120; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; }
+.card p { margin: 0 0 8px; color: #94a3b8; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+button { cursor: pointer; border: 0; border-radius: 12px; padding: 10px 14px; background: #4f46e5; color: #fff; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin-bottom: 16px; }
+.form-grid label { display: flex; flex-direction: column; gap: 8px; color: #cbd5e1; }
+input, select { border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: 10px; }
+.history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.history-list { display: grid; gap: 8px; max-height: 500px; overflow: auto; }
+.history-list button { text-align: left; background: #0f172a; border: 1px solid #334155; display: grid; gap: 4px; }
+.history-detail { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 12px; }
+.loading { min-height: 100vh; display: grid; place-items: center; color: #e2e8f0; }
+.error-banner { margin-bottom: 14px; padding: 10px 12px; border-radius: 12px; border: 1px solid #7f1d1d; background: #2b0b0b; color: #fecaca; }
