@@ -43,6 +43,36 @@ export default function App() {
     });
   };
 
+  const createScreenshotSafe = async (sessionId: string): Promise<string | undefined> => {
+    try {
+      if (!window.electronApi?.createScreenshot) return undefined;
+      return await window.electronApi.createScreenshot(sessionId);
+    } catch {
+      return undefined;
+    }
+  };
+
+  const sendShinyDiscordSafe = async (session: HuntSession, screenshotPath?: string) => {
+    try {
+      if (!config.discordEnabled || !config.discordWebhookUrl) return;
+      if (!window.electronApi?.sendShinyDiscord) return;
+
+      await window.electronApi.sendShinyDiscord({
+        webhookUrl: config.discordWebhookUrl,
+        pokemon: session.targetPokemon,
+        encounters: session.encounterCount,
+        huntMode: config.huntMode,
+        gameProfile: config.gameProfile,
+        screenshotPath,
+      });
+
+      setLastAction("Discord shiny notification sent");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Discord send failed";
+      setErrorBanner(msg);
+    }
+  };
+
   const start = () => {
     const s = newSession(config);
     setActive(s);
@@ -66,18 +96,32 @@ export default function App() {
 
   const forceShiny = () => {
     if (!active) return;
-    const fakeScreenshot = `screenshots/shiny-${Date.now()}.png`;
+
     const shiny: HuntSession = {
       ...active,
       shinyFound: true,
       endedAt: new Date().toISOString(),
       endedReason: "shiny",
-      screenshotPath: fakeScreenshot,
     };
+
     finalizeSession(shiny);
     setActive(null);
     setStatus("shiny_found");
     setLastAction("✨ Force shiny triggered");
+
+    void (async () => {
+      const shot = await createScreenshotSafe(shiny.id);
+
+      if (shot) {
+        setSessions((old) => {
+          const next = old.map((s) => (s.id === shiny.id ? { ...s, screenshotPath: shot } : s));
+          saveSessions(next);
+          return next;
+        });
+      }
+
+      await sendShinyDiscordSafe(shiny, shot);
+    })();
   };
 
   const runDiscordTest = async () => {
@@ -103,23 +147,35 @@ export default function App() {
         const isShiny = Math.floor(Math.random() * config.shinyChance) === 0;
 
         if (isShiny) {
-          const fakeScreenshot = `screenshots/shiny-${Date.now()}.png`;
           const shinySession: HuntSession = {
             ...prev,
             encounterCount: nextCount,
             shinyFound: true,
             endedAt: new Date().toISOString(),
             endedReason: "shiny",
-            screenshotPath: fakeScreenshot,
           };
 
           finalizeSession(shinySession);
           setStatus("shiny_found");
           setLastAction(`✨ Shiny found at encounter #${nextCount}`);
 
-          if (config.autoPauseOnShiny) {
-            return null;
-          }
+          void (async () => {
+            const shot = await createScreenshotSafe(shinySession.id);
+
+            if (shot) {
+              setSessions((old) => {
+                const next = old.map((s) =>
+                  s.id === shinySession.id ? { ...s, screenshotPath: shot } : s
+                );
+                saveSessions(next);
+                return next;
+              });
+            }
+
+            await sendShinyDiscordSafe(shinySession, shot);
+          })();
+
+          if (config.autoPauseOnShiny) return null;
           return shinySession;
         }
 
@@ -192,19 +248,11 @@ export default function App() {
             </label>
             <label>
               Encounter interval (ms)
-              <input
-                type="number"
-                value={config.encounterIntervalMs}
-                onChange={(e) => persistConfig({ ...config, encounterIntervalMs: Number(e.target.value || 1200) })}
-              />
+              <input type="number" value={config.encounterIntervalMs} onChange={(e) => persistConfig({ ...config, encounterIntervalMs: Number(e.target.value || 1200) })} />
             </label>
             <label>
               Shiny chance (1 op X)
-              <input
-                type="number"
-                value={config.shinyChance}
-                onChange={(e) => persistConfig({ ...config, shinyChance: Math.max(2, Number(e.target.value || 4096)) })}
-              />
+              <input type="number" value={config.shinyChance} onChange={(e) => persistConfig({ ...config, shinyChance: Math.max(2, Number(e.target.value || 4096)) })} />
             </label>
           </section>
         )}
@@ -229,35 +277,17 @@ export default function App() {
           <section className="panel">
             <h2>Settings</h2>
             <label>
-              <input
-                type="checkbox"
-                checked={config.autoFleeNonShiny}
-                onChange={(e) => persistConfig({ ...config, autoFleeNonShiny: e.target.checked })}
-              />{" "}
-              Auto flee non-shiny
+              <input type="checkbox" checked={config.autoFleeNonShiny} onChange={(e) => persistConfig({ ...config, autoFleeNonShiny: e.target.checked })} /> Auto flee non-shiny
             </label>
             <label>
-              <input
-                type="checkbox"
-                checked={config.autoPauseOnShiny}
-                onChange={(e) => persistConfig({ ...config, autoPauseOnShiny: e.target.checked })}
-              />{" "}
-              Auto pause on shiny
+              <input type="checkbox" checked={config.autoPauseOnShiny} onChange={(e) => persistConfig({ ...config, autoPauseOnShiny: e.target.checked })} /> Auto pause on shiny
             </label>
             <label>
-              <input
-                type="checkbox"
-                checked={config.discordEnabled}
-                onChange={(e) => persistConfig({ ...config, discordEnabled: e.target.checked })}
-              />{" "}
-              Discord enabled
+              <input type="checkbox" checked={config.discordEnabled} onChange={(e) => persistConfig({ ...config, discordEnabled: e.target.checked })} /> Discord enabled
             </label>
             <label>
               Discord webhook URL
-              <input
-                value={config.discordWebhookUrl}
-                onChange={(e) => persistConfig({ ...config, discordWebhookUrl: e.target.value })}
-              />
+              <input value={config.discordWebhookUrl} onChange={(e) => persistConfig({ ...config, discordWebhookUrl: e.target.value })} />
             </label>
             <div className="row">
               <button onClick={runDiscordTest}>Test Notification</button>
