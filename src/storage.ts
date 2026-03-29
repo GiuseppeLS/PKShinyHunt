@@ -11,10 +11,9 @@ export const defaultConfig: HuntConfig = {
   autoPauseOnShiny: true,
   discordEnabled: false,
   discordWebhookUrl: "",
-
   autoFleeNonShiny: true,
   encounterIntervalMs: 1200,
-  shinyChance: 512, // testvriendelijk, later 4096
+  shinyChance: 512,
 };
 
 export function loadConfig(): HuntConfig {

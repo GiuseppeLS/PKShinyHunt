@@ -1,29 +1,61 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, sans-serif; background: #020617; color: #e2e8f0; }
+
 .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
-.sidebar { border-right: 1px solid #1e293b; padding: 20px; display: grid; gap: 10px; background: #0b1222; }
-.sidebar h1 { font-size: 20px; margin: 0 0 8px; }
-.sidebar button { text-align: left; padding: 10px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
+.sidebar {
+  border-right: 1px solid #1e293b;
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+  background: #0b1222;
+}
+.sidebar h1 { font-size: 20px; margin: 0 0 8px; line-height: 1.2; }
+.sidebar button {
+  text-align: left;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+}
 .sidebar button.active { background: #312e81; border-color: #818cf8; }
 
 .main { padding: 24px; }
 .panel { background: #0b1222; border: 1px solid #334155; border-radius: 14px; padding: 16px; }
+
 .grid4 { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 12px; }
 .card { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 12px; }
 .card p { margin: 0; color: #93a3b8; font-size: 12px; }
 .card strong { font-size: 28px; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
-button { cursor: pointer; }
 
 label { display: block; margin-bottom: 12px; }
 input, select {
-  width: 100%; margin-top: 6px; padding: 10px;
-  border-radius: 10px; border: 1px solid #334155;
-  background: #0f172a; color: #e2e8f0;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 .historyItem {
-  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
-  gap: 10px; padding: 10px; border: 1px solid #334155; border-radius: 10px; margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 2fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.errorBanner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #7f1d1d;
+  background: #2b0b0b;
+  color: #fecaca;
 }

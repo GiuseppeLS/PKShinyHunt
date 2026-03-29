@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import type { HuntConfig, HuntSession, HuntStatus } from "./types";
 import { loadConfig, loadSessions, saveConfig, saveSessions } from "./storage";
+import { sendDiscordTest } from "./notifications";
 
 type Tab = "Dashboard" | "Hunt Config" | "History" | "Settings";
 
@@ -22,11 +23,12 @@ export default function App() {
   const [status, setStatus] = useState<HuntStatus>("idle");
   const [active, setActive] = useState<HuntSession | null>(null);
   const [lastAction, setLastAction] = useState("Idle");
+  const [errorBanner, setErrorBanner] = useState("");
 
   const elapsed = useMemo(() => {
     if (!active) return 0;
     return Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
-  }, [active, status]); // status tickt ook mee via rerenders
+  }, [active, status]);
 
   const persistConfig = (next: HuntConfig) => {
     setConfig(next);
@@ -34,9 +36,11 @@ export default function App() {
   };
 
   const finalizeSession = (session: HuntSession) => {
-    const next = [session, ...sessions].slice(0, 100);
-    setSessions(next);
-    saveSessions(next);
+    setSessions((prev) => {
+      const next = [session, ...prev].slice(0, 100);
+      saveSessions(next);
+      return next;
+    });
   };
 
   const start = () => {
@@ -44,14 +48,15 @@ export default function App() {
     setActive(s);
     setStatus("hunting");
     setLastAction("Entered grass");
+    setErrorBanner("");
   };
 
   const stop = () => {
     if (!active) return;
-    const ended = {
+    const ended: HuntSession = {
       ...active,
       endedAt: new Date().toISOString(),
-      endedReason: "manual" as const,
+      endedReason: "manual",
     };
     finalizeSession(ended);
     setActive(null);
@@ -61,11 +66,13 @@ export default function App() {
 
   const forceShiny = () => {
     if (!active) return;
-    const shiny = {
+    const fakeScreenshot = `screenshots/shiny-${Date.now()}.png`;
+    const shiny: HuntSession = {
       ...active,
       shinyFound: true,
       endedAt: new Date().toISOString(),
-      endedReason: "shiny" as const,
+      endedReason: "shiny",
+      screenshotPath: fakeScreenshot,
     };
     finalizeSession(shiny);
     setActive(null);
@@ -73,7 +80,18 @@ export default function App() {
     setLastAction("✨ Force shiny triggered");
   };
 
-  // Mock hunt loop: encounter -> shiny check -> flee -> repeat
+  const runDiscordTest = async () => {
+    try {
+      setErrorBanner("");
+      await sendDiscordTest(config.discordWebhookUrl);
+      setLastAction("Discord test notification sent");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown notification error";
+      setErrorBanner(msg);
+      setLastAction("Discord test failed");
+    }
+  };
+
   useEffect(() => {
     if (status !== "hunting" || !active) return;
 
@@ -85,17 +103,20 @@ export default function App() {
         const isShiny = Math.floor(Math.random() * config.shinyChance) === 0;
 
         if (isShiny) {
+          const fakeScreenshot = `screenshots/shiny-${Date.now()}.png`;
           const shinySession: HuntSession = {
             ...prev,
             encounterCount: nextCount,
             shinyFound: true,
             endedAt: new Date().toISOString(),
             endedReason: "shiny",
+            screenshotPath: fakeScreenshot,
           };
 
           finalizeSession(shinySession);
           setStatus("shiny_found");
           setLastAction(`✨ Shiny found at encounter #${nextCount}`);
+
           if (config.autoPauseOnShiny) {
             return null;
           }
@@ -130,6 +151,8 @@ export default function App() {
       </aside>
 
       <main className="main">
+        {errorBanner && <div className="errorBanner">⚠️ {errorBanner}</div>}
+
         {tab === "Dashboard" && (
           <section className="panel">
             <h2>Dashboard</h2>
@@ -167,7 +190,6 @@ export default function App() {
                 <option value="static_encounter">Static Encounter</option>
               </select>
             </label>
-
             <label>
               Encounter interval (ms)
               <input
@@ -176,7 +198,6 @@ export default function App() {
                 onChange={(e) => persistConfig({ ...config, encounterIntervalMs: Number(e.target.value || 1200) })}
               />
             </label>
-
             <label>
               Shiny chance (1 op X)
               <input
@@ -198,6 +219,7 @@ export default function App() {
                 <span>{s.targetPokemon}</span>
                 <span>{s.encounterCount} encounters</span>
                 <span>{s.shinyFound ? "✨ shiny" : "no shiny"}</span>
+                <span>{s.screenshotPath ?? "-"}</span>
               </div>
             ))}
           </section>
@@ -237,6 +259,9 @@ export default function App() {
                 onChange={(e) => persistConfig({ ...config, discordWebhookUrl: e.target.value })}
               />
             </label>
+            <div className="row">
+              <button onClick={runDiscordTest}>Test Notification</button>
+            </div>
           </section>
         )}
       </main>

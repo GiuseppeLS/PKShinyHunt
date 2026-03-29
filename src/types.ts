@@ -9,11 +9,9 @@ export interface HuntConfig {
   autoPauseOnShiny: boolean;
   discordEnabled: boolean;
   discordWebhookUrl: string;
-
-  // nieuw
   autoFleeNonShiny: boolean;
   encounterIntervalMs: number;
-  shinyChance: number; // bv 4096
+  shinyChance: number; // 1 op X
 }
 
 export interface HuntSession {
@@ -24,4 +22,6 @@ export interface HuntSession {
   encounterCount: number;
   shinyFound: boolean;
   endedReason?: "manual" | "shiny" | "error";
+  screenshotPath?: string;
+  errorMessage?: string;
 }
