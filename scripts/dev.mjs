@@ -1,20 +1,43 @@
 ﻿import { spawn } from "node:child_process";
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const procs = [
-  spawn(npm, ["run", "dev:renderer"], { stdio: "inherit" }),
-  spawn(npm, ["run", "dev:main"], { stdio: "inherit" }),
-  spawn(npm, ["run", "dev:electron"], { stdio: "inherit" })
+const isWin = process.platform === "win32";
+
+function run(scriptName) {
+  if (isWin) {
+    // Windows-safe: via cmd.exe
+    return spawn("cmd.exe", ["/d", "/s", "/c", `npm run ${scriptName}`], {
+      stdio: "inherit",
+      env: process.env
+    });
+  }
+
+  return spawn("npm", ["run", scriptName], {
+    stdio: "inherit",
+    env: process.env
+  });
+}
+
+const children = [
+  run("dev:renderer"),
+  run("dev:main"),
+  run("dev:electron")
 ];
 
-const stop = () => {
-  for (const p of procs) {
-    try { p.kill(); } catch {}
+let shuttingDown = false;
+function shutdown(code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const child of children) {
+    try { child.kill(); } catch {}
   }
-};
-
-for (const p of procs) {
-  p.on("exit", (code) => { if (code && code !== 0) stop(); });
+  setTimeout(() => process.exit(code), 200);
 }
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
+
+for (const child of children) {
+  child.on("exit", (code) => {
+    if (code && code !== 0) shutdown(code);
+  });
+}
+
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
