@@ -1,56 +1,63 @@
-﻿import type { EmulatorAdapter } from "../types/interfaces";
-import type { EncounterInfo, HuntConfig } from "../types/domain";
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from 'node:crypto';
+import type { EmulatorAdapter } from '../types/interfaces';
+import type { EncounterInfo, HuntConfig } from '../types/domain';
 
-const pool = ["Ralts", "Eevee", "Pikachu", "Gastly", "Absol"];
+const pokemonPool = ['Pikachu', 'Eevee', 'Ralts', 'Beldum', 'Zorua', 'Gastly', 'Absol', 'Dratini'];
 
 export class MockEmulatorAdapter implements EmulatorAdapter {
-  id = "mock";
-  name = "Mock Emulator Adapter";
+  id = 'mock';
+  name = 'Mock Emulator Adapter';
+
+  private intervalRef: NodeJS.Timeout | null = null;
   private listener: ((encounter: EncounterInfo) => void) | null = null;
-  private timer: NodeJS.Timeout | null = null;
-  private config: HuntConfig | null = null;
+  private activeConfig: HuntConfig | null = null;
+
+  async start(config: HuntConfig): Promise<void> {
+    this.activeConfig = config;
+    this.stopTimer();
+    this.intervalRef = setInterval(() => {
+      const encounter = this.generateEncounter(Math.random() < 0.02);
+      this.listener?.(encounter);
+    }, 1700);
+  }
+
+  async stop(): Promise<void> {
+    this.stopTimer();
+    this.activeConfig = null;
+  }
 
   onEncounter(listener: (encounter: EncounterInfo) => void): void {
     this.listener = listener;
   }
 
-  async start(config: HuntConfig): Promise<void> {
-    this.config = config;
-    this.stopTimer();
-    this.timer = setInterval(() => {
-      const forceShiny = Math.random() < 0.02;
-      this.listener?.({
-        id: randomUUID(),
-        timestamp: new Date().toISOString(),
-        pokemonName: pool[Math.floor(Math.random() * pool.length)],
-        level: Math.floor(Math.random() * 60) + 1,
-        encounterType: config.huntMode,
-        isShinyCandidate: forceShiny
-      });
-    }, 1500);
+  async forceShinyEncounter(): Promise<EncounterInfo> {
+    const encounter = this.generateEncounter(true);
+    this.listener?.(encounter);
+    return encounter;
   }
 
-  async stop(): Promise<void> {
-    this.stopTimer();
-    this.config = null;
-  }
+  private generateEncounter(forceShiny: boolean): EncounterInfo {
+    const target = this.activeConfig?.targetPokemon;
+    const name = Math.random() > 0.6 && target ? target : pokemonPool[Math.floor(Math.random() * pokemonPool.length)];
 
-  async forceShinyEncounter(): Promise<EncounterInfo | null> {
-    if (!this.config) return null;
-    const e: EncounterInfo = {
+    return {
       id: randomUUID(),
       timestamp: new Date().toISOString(),
-      pokemonName: this.config.targetPokemon,
-      encounterType: this.config.huntMode,
-      isShinyCandidate: true
+      pokemonName: name,
+      level: Math.floor(Math.random() * 60) + 1,
+      encounterType: this.activeConfig?.huntMode ?? 'random_encounters',
+      isShinyCandidate: forceShiny,
+      metadata: {
+        source: 'mock-adapter'
+      }
     };
-    this.listener?.(e);
-    return e;
   }
 
   private stopTimer(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+    if (this.intervalRef) {
+      clearInterval(this.intervalRef);
+      this.intervalRef = null;
+    }
   }
 }
+

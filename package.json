@@ -10,14 +10,17 @@
     "dev:renderer": "vite",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:electron": "wait-on tcp:5173 dist/main/main/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "dev:electron:legacy": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.cjs",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "doctor:dev": "node -e \"const req=['react','react-dom','vite','@vitejs/plugin-react','electron','wait-on','cross-env','typescript','pngjs'];const miss=req.filter(n=>{try{return !require.resolve(n)}catch{return true}});if(miss.length){console.log('Missing dependencies:',miss.join(', '));console.log('Run: npm install --include=dev');process.exit(1)}console.log('Dependencies OK');\""
   },
   "dependencies": {
     "electron-store": "^10.1.0",
+    "pngjs": "^7.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "uuid": "^11.1.0"
@@ -28,6 +31,7 @@
     "@types/react-dom": "^18.3.5",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^35.2.0",
     "typescript": "^5.8.3",

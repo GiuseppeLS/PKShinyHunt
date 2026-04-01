@@ -1,55 +1,78 @@
-﻿import fs from "node:fs/promises";
-import path from "node:path";
-import { app } from "electron";
-import type { HuntSession, Settings } from "../types/domain";
+﻿import fs from 'node:fs/promises';
+import path from 'node:path';
+import { app } from 'electron';
+import type { HuntSession, Settings } from '../types/domain';
+import type { SessionRepository, SettingsRepository } from '../types/interfaces';
 
-const defaults: Settings = {
-  discordWebhookUrl: "",
-  screenshotFolder: path.join(app.getPath("pictures"), "PokemonShinyHuntAssistant"),
-  defaultGameProfileId: "oras-starters",
+const defaultSettings: Settings = {
+  discordWebhookUrl: '',
+  screenshotFolder: path.join(app.getPath('pictures'), 'PokemonShinyHuntAssistant'),
+  defaultGameProfileId: 'oras-starters',
   autoPauseOnShiny: true,
   saveScreenshots: true
 };
 
-interface Db { settings: Settings; sessions: HuntSession[]; }
+interface DatabaseShape {
+  settings: Settings;
+  sessions: HuntSession[];
+}
 
-export class JsonStorageService {
-  private file = path.join(app.getPath("userData"), "storage.json");
+export class JsonStorageService implements SessionRepository, SettingsRepository {
+  private readonly filePath: string;
+
+  constructor() {
+    this.filePath = path.join(app.getPath('userData'), 'storage.json');
+  }
 
   async getSettings(): Promise<Settings> {
-    const db = await this.read(); return db.settings;
+    const db = await this.readDb();
+    return db.settings;
   }
 
   async saveSettings(settings: Settings): Promise<void> {
-    const db = await this.read(); db.settings = settings; await this.write(db);
+    const db = await this.readDb();
+    db.settings = settings;
+    await this.writeDb(db);
   }
 
   async saveSession(session: HuntSession): Promise<void> {
-    const db = await this.read();
-    const i = db.sessions.findIndex(s => s.id === session.id);
-    if (i >= 0) db.sessions[i] = session; else db.sessions.unshift(session);
+    const db = await this.readDb();
+    const existingIndex = db.sessions.findIndex((entry) => entry.id === session.id);
+    if (existingIndex >= 0) {
+      db.sessions[existingIndex] = session;
+    } else {
+      db.sessions.unshift(session);
+    }
     db.sessions = db.sessions.slice(0, 200);
-    await this.write(db);
+    await this.writeDb(db);
   }
 
   async listSessions(): Promise<HuntSession[]> {
-    const db = await this.read(); return db.sessions;
+    const db = await this.readDb();
+    return db.sessions;
   }
 
-  private async read(): Promise<Db> {
+  private async readDb(): Promise<DatabaseShape> {
     try {
-      const raw = await fs.readFile(this.file, "utf8");
-      const p = JSON.parse(raw) as Partial<Db>;
-      return { settings: { ...defaults, ...(p.settings ?? {}) }, sessions: p.sessions ?? [] };
+      const raw = await fs.readFile(this.filePath, 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<DatabaseShape>;
+      return {
+        settings: { ...defaultSettings, ...(parsed.settings ?? {}) },
+        sessions: parsed.sessions ?? []
+      };
     } catch {
-      const d: Db = { settings: defaults, sessions: [] };
-      await this.write(d);
-      return d;
+      const initial: DatabaseShape = { settings: defaultSettings, sessions: [] };
+      await this.writeDb(initial);
+      return initial;
     }
   }
 
-  private async write(db: Db): Promise<void> {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(this.file, JSON.stringify(db, null, 2), "utf8");
+  private async writeDb(data: DatabaseShape): Promise<void> {
+    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 }
+
+export { defaultSettings };
+
+

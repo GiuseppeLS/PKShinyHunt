@@ -1,5 +1,5 @@
-﻿export type HuntStatus = "idle" | "hunting" | "shiny_found" | "paused" | "error";
-export type HuntMode = "random_encounters" | "soft_reset" | "static_encounter";
+﻿export type HuntStatus = 'idle' | 'hunting' | 'shiny_found' | 'paused' | 'error';
+export type HuntMode = 'random_encounters' | 'soft_reset' | 'static_encounter';
 
 export interface EncounterInfo {
   id: string;
@@ -63,3 +63,4 @@ export interface HuntState {
   elapsedMs: number;
   lastEncounter?: EncounterInfo;
 }
+

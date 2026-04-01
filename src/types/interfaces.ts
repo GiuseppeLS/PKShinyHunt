@@ -1,4 +1,4 @@
-﻿import type { EncounterInfo, GameProfile, HuntConfig, HuntSession, Settings, ShinyDetectionResult } from "./domain";
+﻿import type { EncounterInfo, GameProfile, HuntConfig, HuntSession, Settings, ShinyDetectionResult } from './domain';
 
 export interface EmulatorAdapter {
   id: string;
@@ -28,3 +28,13 @@ export interface SessionRepository {
   saveSession(session: HuntSession): Promise<void>;
   listSessions(): Promise<HuntSession[]>;
 }
+
+export interface SettingsRepository {
+  getSettings(): Promise<Settings>;
+  saveSettings(settings: Settings): Promise<void>;
+}
+
+export interface GameProfileRepository {
+  listProfiles(): Promise<GameProfile[]>;
+}
+
