@@ -1,5 +1,4 @@
-﻿
-interface SidebarProps {
+﻿interface SidebarProps {
   tab: string;
   setTab: (value: string) => void;
 }
@@ -20,5 +19,3 @@ export function Sidebar({ tab, setTab }: SidebarProps) {
     </aside>
   );
 }
-
-

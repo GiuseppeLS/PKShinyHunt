@@ -17,5 +17,3 @@ export class CitraAdapter implements EmulatorAdapter {
     // Future: register memory-parsed encounter callback.
   }
 }
-
-

@@ -5,5 +5,3 @@ export const defaultGameProfiles: GameProfile[] = [
   { id: 'usum-legendaries', name: 'USUM Legendaries', game: 'Ultra Sun / Ultra Moon', generation: 7 },
   { id: 'xy-friend-safari', name: 'XY Friend Safari', game: 'X / Y', generation: 6 }
 ];
-
-

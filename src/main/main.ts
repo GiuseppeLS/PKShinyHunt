@@ -1,4 +1,5 @@
 ﻿import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage } from 'electron';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -21,6 +22,10 @@ let previewInterval: NodeJS.Timeout | null = null;
 let lastPreviewFrame: EmulatorPreviewFrame | null = null;
 let huntLoopInterval: NodeJS.Timeout | null = null;
 let huntLoopRunning = false;
+let movementInterval: NodeJS.Timeout | null = null;
+let movementDirectionIndex = 0;
+let movementEnabled = false;
+let movementResumeBlockedUntil = 0;
 
 const huntVision = {
   previousIntensity: 0,
@@ -28,6 +33,87 @@ const huntVision = {
   lastEncounterAt: 0,
   quietFrames: 0
 };
+
+const movementPatternKeys = {
+  left_right: ['left', 'right'],
+  up_down: ['up', 'down']
+} as const;
+
+function movementKeyToSendKeys(direction: string): string {
+  if (direction === 'left') return '{LEFT}';
+  if (direction === 'right') return '{RIGHT}';
+  if (direction === 'up') return '{UP}';
+  return '{DOWN}';
+}
+
+async function sendDirectionalInput(direction: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const key = movementKeyToSendKeys(direction);
+    await new Promise<void>((resolve, reject) => {
+      const script = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${key}')`;
+      const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
+      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`powershell exit ${code}`))));
+      child.on('error', reject);
+    });
+    return;
+  }
+
+  if (process.platform === 'linux') {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('xdotool', ['key', direction]);
+      child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`xdotool exit ${code}`))));
+      child.on('error', reject);
+    });
+    return;
+  }
+
+  throw new Error(`Unsupported platform for automatic movement: ${process.platform}`);
+}
+
+function stopMovementEngine(reason: string) {
+  if (movementInterval) {
+    clearInterval(movementInterval);
+    movementInterval = null;
+  }
+  movementEnabled = false;
+  logInfo('Movement stopped', { reason });
+}
+
+function startMovementEngine(config: HuntConfig) {
+  if (config.enableAutoMovement === false) {
+    stopMovementEngine('disabled-by-config');
+    return;
+  }
+
+  stopMovementEngine('restart');
+  const pattern = config.movementPattern ?? 'left_right';
+  const stepIntervalMs = config.movementIntervalMs ?? 900;
+  const keys = movementPatternKeys[pattern];
+  movementEnabled = true;
+
+  movementInterval = setInterval(async () => {
+    if (!movementEnabled) {
+      return;
+    }
+
+    if (Date.now() < movementResumeBlockedUntil) {
+      return;
+    }
+
+    const direction = keys[movementDirectionIndex % keys.length];
+    movementDirectionIndex += 1;
+
+    try {
+      await sendDirectionalInput(direction);
+      logInfo('Movement tick', { direction, pattern });
+    } catch (error) {
+      logError('Movement input failed', error);
+      stopMovementEngine('input-error');
+    }
+  }, stepIntervalMs);
+
+  logInfo('Movement started', { pattern, stepIntervalMs });
+}
 
 function logInfo(message: string, meta?: Record<string, unknown>) {
   console.log(JSON.stringify({ scope: 'hunt-main', level: 'info', message, ...meta, at: new Date().toISOString() }));
@@ -133,6 +219,7 @@ async function saveDebugFrame(frame: EmulatorPreviewFrame, reason: string): Prom
 }
 
 function stopHuntLoop() {
+  stopMovementEngine('hunt-loop-stop');
   if (huntLoopInterval) {
     clearInterval(huntLoopInterval);
     huntLoopInterval = null;
@@ -150,7 +237,9 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
   }
 
   stopHuntLoop();
+  movementDirectionIndex = 0;
   engine.markBattlePhase('searching');
+  startMovementEngine(config);
 
   huntLoopInterval = setInterval(async () => {
     if (huntLoopRunning || !attachedEmulatorSourceId) {
@@ -170,6 +259,7 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
       const encounterStart = !huntVision.inBattle && diff > 24 && now - huntVision.lastEncounterAt > 7000;
       if (encounterStart) {
         huntVision.inBattle = true;
+        stopMovementEngine('encounter-detected');
         huntVision.lastEncounterAt = now;
         huntVision.quietFrames = 0;
 
@@ -204,7 +294,9 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
           huntVision.inBattle = false;
           huntVision.quietFrames = 0;
           engine.markBattlePhase('searching');
-          logInfo('Returned to overworld');
+          movementResumeBlockedUntil = Date.now() + (config.movementResumeCooldownMs ?? 1200);
+          startMovementEngine(config);
+          logInfo('Returned to overworld', { resumeAfterMs: config.movementResumeCooldownMs ?? 1200 });
         }
       }
 

@@ -30,4 +30,3 @@ const api: ElectronApi = {
 };
 
 contextBridge.exposeInMainWorld('electronApi', api);
-

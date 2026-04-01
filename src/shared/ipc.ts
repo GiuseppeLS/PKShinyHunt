@@ -55,3 +55,4 @@ export interface ElectronApi {
   saveCurrentPreviewFrame(): Promise<{ saved: boolean; filePath?: string }>;
   subscribeEmulatorPreview(listener: (frame: EmulatorPreviewFrame) => void): () => void;
 }
+

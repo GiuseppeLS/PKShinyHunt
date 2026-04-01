@@ -54,7 +54,12 @@ export function useAppState() {
       saveScreenshots: settings?.saveScreenshots ?? true,
       autoPauseOnShiny: settings?.autoPauseOnShiny ?? true,
       enableDiscordNotifications: Boolean(settings?.discordWebhookUrl),
-      screenshotFolder: settings?.screenshotFolder ?? ''
+      screenshotFolder: settings?.screenshotFolder ?? '',
+      enableAutoMovement: true,
+      movementPattern: 'left_right',
+      movementStepMs: 120,
+      movementIntervalMs: 900,
+      movementResumeCooldownMs: 1200
     };
   }, [profiles, settings]);
 
@@ -80,5 +85,3 @@ export function useAppState() {
     refreshSessions
   };
 }
-
-

@@ -100,5 +100,3 @@ export class DiscordWebhookProvider implements NotificationProvider {
     }
   }
 }
-
-

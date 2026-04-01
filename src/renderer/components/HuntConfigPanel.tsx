@@ -40,5 +40,3 @@ export function HuntConfigPanel({ config, setConfig, profiles }: Props) {
     </section>
   );
 }
-
-

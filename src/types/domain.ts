@@ -43,6 +43,11 @@ export interface HuntConfig {
   autoPauseOnShiny: boolean;
   enableDiscordNotifications: boolean;
   screenshotFolder: string;
+  enableAutoMovement?: boolean;
+  movementPattern?: 'left_right' | 'up_down';
+  movementStepMs?: number;
+  movementIntervalMs?: number;
+  movementResumeCooldownMs?: number;
 }
 
 export interface HuntSession {
@@ -72,3 +77,4 @@ export interface HuntState {
   elapsedMs: number;
   lastEncounter?: EncounterInfo;
 }
+
