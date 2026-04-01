@@ -74,5 +74,3 @@ export class JsonStorageService implements SessionRepository, SettingsRepository
 }
 
 export { defaultSettings };
-
-

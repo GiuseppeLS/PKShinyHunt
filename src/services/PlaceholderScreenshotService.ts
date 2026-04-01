@@ -20,3 +20,4 @@ export class PlaceholderScreenshotService implements ScreenshotService {
     return filePath;
   }
 }
+

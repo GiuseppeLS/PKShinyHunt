@@ -6,3 +6,4 @@ export const defaultGameProfiles: GameProfile[] = [
   { id: 'xy-friend-safari', name: 'XY Friend Safari', game: 'X / Y', generation: 6 }
 ];
 
+

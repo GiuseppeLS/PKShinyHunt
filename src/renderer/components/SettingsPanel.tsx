@@ -30,3 +30,4 @@ export function SettingsPanel({ settings, setSettings, onSave }: Props) {
   );
 }
 
+

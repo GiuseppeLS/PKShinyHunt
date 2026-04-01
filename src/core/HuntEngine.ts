@@ -1,7 +1,7 @@
 ﻿import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { EmulatorAdapter, NotificationProvider, ScreenshotService, ShinyDetector, SessionRepository } from '../types/interfaces';
-import type { EncounterInfo, GameProfile, HuntConfig, HuntSession, HuntState, Settings } from '../types/domain';
+import type { EncounterInfo, GameProfile, HuntConfig, HuntSession, HuntState, HuntStatus, Settings } from '../types/domain';
 
 export class HuntEngine extends EventEmitter {
   private currentState: HuntState = {
@@ -32,8 +32,17 @@ export class HuntEngine extends EventEmitter {
     this.settings = settings;
   }
 
+  setStatus(status: HuntStatus, errorMessage?: string): HuntState {
+    this.currentState.status = status;
+    if (errorMessage && this.currentState.activeSession) {
+      this.currentState.activeSession.errorMessage = errorMessage;
+    }
+    this.emitState();
+    return this.currentState;
+  }
+
   async start(config: HuntConfig): Promise<HuntState> {
-    if (this.currentState.status === 'hunting') {
+    if (this.currentState.activeSession) {
       return this.currentState;
     }
 
@@ -47,18 +56,18 @@ export class HuntEngine extends EventEmitter {
       startedAt: new Date().toISOString(),
       config,
       encounterCount: 0,
-      status: 'hunting',
+      status: 'searching',
       shinyFound: false
     };
 
     adapter.onEncounter((encounter) => {
-      void this.handleEncounter(encounter, adapter.id);
+      void this.recordEncounter(encounter, adapter.id);
     });
 
     await adapter.start(config);
 
     this.currentState = {
-      status: 'hunting',
+      status: 'searching',
       activeSession: session,
       elapsedMs: 0
     };
@@ -69,14 +78,14 @@ export class HuntEngine extends EventEmitter {
   }
 
   async stop(): Promise<HuntState> {
-    const session = await this.finalizeCurrentSession();
+    const session = await this.finalizeCurrentSession('idle');
     if (!session) {
       return this.currentState;
     }
 
     this.stopElapsedTicker();
     this.currentState = {
-      status: session.status,
+      status: 'idle',
       activeSession: session,
       elapsedMs: this.currentState.elapsedMs,
       lastEncounter: this.currentState.lastEncounter
@@ -94,16 +103,6 @@ export class HuntEngine extends EventEmitter {
   }
 
   async forceShiny(): Promise<HuntState> {
-    const session = this.currentState.activeSession;
-    if (!session) {
-      return this.currentState;
-    }
-
-    const adapter = this.adapters.get(session.config.emulatorAdapterId);
-    if (adapter?.forceShinyEncounter) {
-      await adapter.forceShinyEncounter();
-    }
-
     return this.currentState;
   }
 
@@ -111,55 +110,28 @@ export class HuntEngine extends EventEmitter {
     return this.profiles;
   }
 
-  private async handleEncounter(encounter: EncounterInfo, adapterId: string): Promise<void> {
+  async recordEncounter(encounter: EncounterInfo, adapterId: string): Promise<void> {
     const session = this.currentState.activeSession;
     if (!session || session.config.emulatorAdapterId !== adapterId) {
       return;
     }
 
     session.encounterCount += 1;
+    session.status = 'encounter_start';
+    this.currentState.status = 'encounter_start';
     this.currentState.lastEncounter = encounter;
-
-    const result = this.detector.detect(encounter);
-    if (result.isShiny) {
-      session.shinyFound = true;
-      session.shinyEncounter = encounter;
-      session.status = 'shiny_found';
-      this.currentState.status = 'shiny_found';
-
-      if (session.config.saveScreenshots) {
-        session.screenshotPath = await this.screenshotService.capture(
-          session.id,
-          encounter.id,
-          session.config.screenshotFolder
-        );
-      }
-
-      await this.notifyProviders(session);
-
-      if (session.config.autoPauseOnShiny || this.settings.autoPauseOnShiny) {
-        await this.finalizeCurrentSession('shiny_found');
-      }
-    }
-
     this.currentState.activeSession = session;
     this.emitState();
   }
 
-  private async notifyProviders(session: HuntSession): Promise<void> {
-    for (const provider of this.notifications) {
-      try {
-        if (provider.id === 'discord') {
-          if (session.config.enableDiscordNotifications && provider.isEnabled(this.settings)) {
-            await provider.sendShinyAlert(session);
-          }
-        } else if (provider.isEnabled(this.settings)) {
-          await provider.sendShinyAlert(session);
-        }
-      } catch (error) {
-        session.errorMessage = error instanceof Error ? error.message : 'Unknown notification error';
-      }
+  markBattlePhase(status: Extract<HuntStatus, 'attached' | 'searching' | 'encounter_start' | 'in_battle' | 'analyzing' | 'error'>): void {
+    const session = this.currentState.activeSession;
+    if (session) {
+      session.status = status;
+      this.currentState.activeSession = session;
     }
+    this.currentState.status = status;
+    this.emitState();
   }
 
   private startElapsedTicker(): void {
@@ -194,8 +166,7 @@ export class HuntEngine extends EventEmitter {
     const adapter = this.adapters.get(session.config.emulatorAdapterId);
     await adapter?.stop();
 
-    const status = forceStatus ?? (session.shinyFound ? 'shiny_found' : 'idle');
-    session.status = status;
+    session.status = forceStatus ?? (session.shinyFound ? 'shiny_found' : 'idle');
     session.endedAt = new Date().toISOString();
 
     await this.sessionRepo.saveSession(session);

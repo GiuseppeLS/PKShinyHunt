@@ -37,4 +37,3 @@ export interface SettingsRepository {
 export interface GameProfileRepository {
   listProfiles(): Promise<GameProfile[]>;
 }
-

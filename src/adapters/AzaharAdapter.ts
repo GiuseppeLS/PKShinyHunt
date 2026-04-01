@@ -17,3 +17,4 @@ export class AzaharAdapter implements EmulatorAdapter {
     // Future: parse live encounters.
   }
 }
+

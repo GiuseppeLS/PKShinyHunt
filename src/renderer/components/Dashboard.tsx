@@ -46,7 +46,7 @@ export function Dashboard({
     <section className="panel">
       <h2>Dashboard</h2>
       <div className="badge-row">
-        <span className={`badge ${state.status}`}>{state.status.replace('_', ' ')}</span>
+        <span className={`badge ${state.status}`}>{state.status.replace(/_/g, ' ')}</span>
       </div>
       <div className="metrics-grid">
         <div className="card"><p>Encounters</p><strong>{session?.encounterCount ?? 0}</strong></div>
@@ -94,4 +94,5 @@ export function Dashboard({
     </section>
   );
 }
+
 

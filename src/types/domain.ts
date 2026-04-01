@@ -1,4 +1,13 @@
-﻿export type HuntStatus = 'idle' | 'hunting' | 'shiny_found' | 'paused' | 'error';
+﻿export type HuntStatus =
+  | 'idle'
+  | 'attached'
+  | 'searching'
+  | 'encounter_start'
+  | 'in_battle'
+  | 'analyzing'
+  | 'shiny_found'
+  | 'paused'
+  | 'error';
 export type HuntMode = 'random_encounters' | 'soft_reset' | 'static_encounter';
 
 export interface EncounterInfo {
@@ -63,4 +72,3 @@ export interface HuntState {
   elapsedMs: number;
   lastEncounter?: EncounterInfo;
 }
-

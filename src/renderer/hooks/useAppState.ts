@@ -50,7 +50,7 @@ export function useAppState() {
       targetPokemon: 'Ralts',
       gameProfileId: settings?.defaultGameProfileId || defaultProfile,
       huntMode: 'random_encounters',
-      emulatorAdapterId: 'mock',
+      emulatorAdapterId: 'citra',
       saveScreenshots: settings?.saveScreenshots ?? true,
       autoPauseOnShiny: settings?.autoPauseOnShiny ?? true,
       enableDiscordNotifications: Boolean(settings?.discordWebhookUrl),
@@ -80,4 +80,5 @@ export function useAppState() {
     refreshSessions
   };
 }
+
 

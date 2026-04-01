@@ -10,4 +10,3 @@ export class BasicShinyDetector implements ShinyDetector {
     return { isShiny: false, confidence: 0.95, reason: 'No shiny indicators in encounter payload' };
   }
 }
-

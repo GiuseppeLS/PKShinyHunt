@@ -1,4 +1,5 @@
-﻿import { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage } from 'electron';
+﻿import { randomUUID } from 'node:crypto';
+import { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage } from 'electron';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -12,19 +13,28 @@ import { MockEmulatorAdapter } from '../adapters/MockEmulatorAdapter';
 import { CitraAdapter } from '../adapters/CitraAdapter';
 import { AzaharAdapter } from '../adapters/AzaharAdapter';
 import { HuntEngine } from '../core/HuntEngine';
-import type { HuntConfig, Settings } from '../types/domain';
+import type { EncounterInfo, HuntConfig, Settings } from '../types/domain';
 
 let mainWindow: BrowserWindow | null = null;
 let attachedEmulatorSourceId: string | null = null;
 let previewInterval: NodeJS.Timeout | null = null;
 let lastPreviewFrame: EmulatorPreviewFrame | null = null;
+let huntLoopInterval: NodeJS.Timeout | null = null;
+let huntLoopRunning = false;
+
+const huntVision = {
+  previousIntensity: 0,
+  inBattle: false,
+  lastEncounterAt: 0,
+  quietFrames: 0
+};
 
 function logInfo(message: string, meta?: Record<string, unknown>) {
-  console.log(`[emulator] ${message}`, meta ?? '');
+  console.log(JSON.stringify({ scope: 'hunt-main', level: 'info', message, ...meta, at: new Date().toISOString() }));
 }
 
 function logError(message: string, error: unknown) {
-  console.error(`[emulator] ${message}`, error);
+  console.error(JSON.stringify({ scope: 'hunt-main', level: 'error', message, error: String(error), at: new Date().toISOString() }));
 }
 
 async function listCitraWindows(): Promise<EmulatorWindowInfo[]> {
@@ -96,10 +106,123 @@ function startPreviewLoop() {
   logInfo('Preview loop started', { sourceId: attachedEmulatorSourceId });
 }
 
+function calculateFrameIntensity(frameDataUrl: string): number {
+  const image = nativeImage.createFromDataURL(frameDataUrl);
+  const bitmap = image.resize({ width: 64, height: 36 }).toBitmap();
+  if (!bitmap.length) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let i = 0; i < bitmap.length; i += 4) {
+    const b = bitmap[i] ?? 0;
+    const g = bitmap[i + 1] ?? 0;
+    const r = bitmap[i + 2] ?? 0;
+    total += (r + g + b) / 3;
+  }
+  return total / (bitmap.length / 4);
+}
+
+async function saveDebugFrame(frame: EmulatorPreviewFrame, reason: string): Promise<string> {
+  const outputDir = path.join(app.getPath('pictures'), 'PokemonShinyHuntAssistant', 'debug-frames');
+  await fs.mkdir(outputDir, { recursive: true });
+  const filePath = path.join(outputDir, `${reason}-${Date.now()}.png`);
+  const image = nativeImage.createFromDataURL(frame.dataUrl);
+  await fs.writeFile(filePath, image.toPNG());
+  return filePath;
+}
+
+function stopHuntLoop() {
+  if (huntLoopInterval) {
+    clearInterval(huntLoopInterval);
+    huntLoopInterval = null;
+  }
+  huntLoopRunning = false;
+  huntVision.inBattle = false;
+  huntVision.lastEncounterAt = 0;
+  huntVision.previousIntensity = 0;
+  huntVision.quietFrames = 0;
+}
+
+function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
+  if (!attachedEmulatorSourceId) {
+    throw new Error('Attach eerst een Citra-window voor je start.');
+  }
+
+  stopHuntLoop();
+  engine.markBattlePhase('searching');
+
+  huntLoopInterval = setInterval(async () => {
+    if (huntLoopRunning || !attachedEmulatorSourceId) {
+      return;
+    }
+
+    huntLoopRunning = true;
+    try {
+      const frame = await captureFrameFromSource(attachedEmulatorSourceId);
+      lastPreviewFrame = frame;
+      mainWindow?.webContents.send(IPC_CHANNELS.EMULATOR_PREVIEW_FRAME, frame);
+
+      const intensity = calculateFrameIntensity(frame.dataUrl);
+      const diff = Math.abs(intensity - huntVision.previousIntensity);
+      const now = Date.now();
+
+      const encounterStart = !huntVision.inBattle && diff > 24 && now - huntVision.lastEncounterAt > 7000;
+      if (encounterStart) {
+        huntVision.inBattle = true;
+        huntVision.lastEncounterAt = now;
+        huntVision.quietFrames = 0;
+
+        engine.markBattlePhase('encounter_start');
+        const debugPath = await saveDebugFrame(frame, 'encounter-start');
+
+        const encounter: EncounterInfo = {
+          id: randomUUID(),
+          timestamp: new Date().toISOString(),
+          pokemonName: 'Unknown',
+          encounterType: config.huntMode,
+          metadata: {
+            source: 'citra-visual-cue',
+            frameDiff: diff,
+            debugPath
+          }
+        };
+
+        await engine.recordEncounter(encounter, config.emulatorAdapterId);
+        engine.markBattlePhase('in_battle');
+
+        logInfo('Encounter started', { frameDiff: diff, debugPath, encounterId: encounter.id });
+      } else if (huntVision.inBattle) {
+        engine.markBattlePhase('analyzing');
+        if (diff < 6) {
+          huntVision.quietFrames += 1;
+        } else {
+          huntVision.quietFrames = 0;
+        }
+
+        if (huntVision.quietFrames >= 4) {
+          huntVision.inBattle = false;
+          huntVision.quietFrames = 0;
+          engine.markBattlePhase('searching');
+          logInfo('Returned to overworld');
+        }
+      }
+
+      huntVision.previousIntensity = intensity;
+    } catch (error) {
+      engine.markBattlePhase('error');
+      logError('Hunt loop tick failed', error);
+    } finally {
+      huntLoopRunning = false;
+    }
+  }, 400);
+}
+
 async function bootstrap(): Promise<void> {
   const storage = new JsonStorageService();
   const settings = await storage.getSettings();
   let currentSettings = settings;
+  let activeLoopConfig: HuntConfig | null = null;
 
   const adapters = new Map([
     ['mock', new MockEmulatorAdapter()],
@@ -131,9 +254,27 @@ async function bootstrap(): Promise<void> {
     state: engine.getState()
   }));
 
-  ipcMain.handle(IPC_CHANNELS.HUNT_START, async (_event, config: HuntConfig) => engine.start(config));
-  ipcMain.handle(IPC_CHANNELS.HUNT_STOP, async () => engine.stop());
-  ipcMain.handle(IPC_CHANNELS.HUNT_RESET, async () => engine.reset());
+  ipcMain.handle(IPC_CHANNELS.HUNT_START, async (_event, config: HuntConfig) => {
+    activeLoopConfig = config;
+    const state = await engine.start(config);
+    if (config.emulatorAdapterId === 'citra') {
+      startHuntLoop(engine, config);
+    }
+    return state;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUNT_STOP, async () => {
+    stopHuntLoop();
+    activeLoopConfig = null;
+    return engine.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUNT_RESET, async () => {
+    stopHuntLoop();
+    activeLoopConfig = null;
+    return engine.reset();
+  });
+
   ipcMain.handle(IPC_CHANNELS.HUNT_FORCE_SHINY, async () => engine.forceShiny());
   ipcMain.handle(IPC_CHANNELS.HUNT_TEST_NOTIFICATION, async () => {
     const local = new LocalDesktopNotificationProvider();
@@ -171,14 +312,21 @@ async function bootstrap(): Promise<void> {
     }
 
     attachedEmulatorSourceId = sourceId;
+    engine.markBattlePhase('attached');
     logInfo('Attached emulator window', { sourceId });
     return { attached: true, sourceId };
   });
 
   ipcMain.handle(IPC_CHANNELS.EMULATOR_DETACH, async () => {
     stopPreviewLoop();
+    stopHuntLoop();
+    if (activeLoopConfig?.emulatorAdapterId === 'citra') {
+      await engine.stop();
+    }
+    activeLoopConfig = null;
     attachedEmulatorSourceId = null;
     lastPreviewFrame = null;
+    engine.setStatus('idle');
     logInfo('Detached emulator window');
     return { attached: false };
   });
@@ -274,6 +422,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   stopPreviewLoop();
+  stopHuntLoop();
   if (process.platform !== 'darwin') {
     app.quit();
   }

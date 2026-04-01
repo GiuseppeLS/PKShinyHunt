@@ -36,3 +36,4 @@ export function HistoryPanel({ sessions }: { sessions: HuntSession[] }) {
   );
 }
 
+
