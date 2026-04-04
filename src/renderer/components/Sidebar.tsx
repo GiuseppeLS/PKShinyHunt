@@ -3,7 +3,7 @@
   setTab: (value: string) => void;
 }
 
-const tabs = ['Dashboard', 'Hunt Config', 'History', 'Settings'];
+const tabs = ['Dashboard', 'Azahar Diagnostics', 'Hunt Config', 'History', 'Settings'];
 
 export function Sidebar({ tab, setTab }: SidebarProps) {
   return (

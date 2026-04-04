@@ -5,7 +5,7 @@ import { HuntConfigPanel } from './components/HuntConfigPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useAppState } from './hooks/useAppState';
-import type { EmulatorWindowInfo } from '../shared/ipc';
+import type { AzaharDiagnosticPayload, EmulatorWindowInfo } from '../shared/ipc';
 import type { HuntConfig } from '../types/domain';
 
 export function App() {
@@ -27,6 +27,9 @@ export function App() {
   const [selectedEmulatorId, setSelectedEmulatorId] = useState('');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [emulatorLog, setEmulatorLog] = useState('Idle');
+  const [diagnostics, setDiagnostics] = useState<AzaharDiagnosticPayload | null>(null);
+  const [diagnosticChangeLog, setDiagnosticChangeLog] = useState<Array<{ key: string; before: unknown; after: unknown; at: string; idleOverworld: boolean }>>([]);
+  const [unstableFields, setUnstableFields] = useState<string[]>([]);
 
   useEffect(() => {
     setConfig(activeConfig);
@@ -44,6 +47,101 @@ export function App() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!window.electronApi) {
+      return;
+    }
+
+    let cancelled = false;
+    let previousValues: Record<string, unknown> = {};
+    const idleInstabilityCounter = new Map<string, number>();
+
+    const pollDiagnostics = async () => {
+      try {
+        const payload = await window.electronApi.pollAzaharDiagnostics();
+        if (cancelled) {
+          return;
+        }
+
+        const nextValues: Record<string, unknown> = {
+          ...payload.raw.memory,
+          ...payload.raw.status
+        };
+        const idleOverworld = payload.derived.inBattle === false
+          && payload.derived.commandMenuVisible === false
+          && payload.derived.canRun === false;
+
+        const changes: Array<{ key: string; before: unknown; after: unknown; at: string; idleOverworld: boolean }> = [];
+        for (const [key, value] of Object.entries(nextValues)) {
+          if (!(key in previousValues)) {
+            continue;
+          }
+
+          if (previousValues[key] !== value) {
+            changes.push({ key, before: previousValues[key], after: value, at: payload.polledAt, idleOverworld });
+            if (idleOverworld) {
+              idleInstabilityCounter.set(key, (idleInstabilityCounter.get(key) ?? 0) + 1);
+            }
+          }
+        }
+
+        if (changes.length > 0) {
+          setDiagnosticChangeLog((prev) => [...changes, ...prev].slice(0, 30));
+        }
+
+        const unstable = Array.from(idleInstabilityCounter.entries())
+          .filter(([, count]) => count >= 3)
+          .map(([key]) => key)
+          .sort();
+
+        setUnstableFields(unstable);
+        previousValues = nextValues;
+        setDiagnostics(payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setDiagnostics({
+          polledAt: new Date().toISOString(),
+          connected: false,
+          rpcConnected: false,
+          lastError: message,
+          derived: {
+            inBattle: false,
+            commandMenuVisible: false,
+            canRun: false,
+            encounteredSpeciesId: null,
+            isShiny: null,
+            state: 'ERROR'
+          },
+          raw: {
+            status: {},
+            memory: {}
+          },
+          fields: []
+        });
+      }
+    };
+
+    void pollDiagnostics();
+    const interval = window.setInterval(() => {
+      void pollDiagnostics();
+    }, 700);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const expectedFields = ['battleFlag', 'menuFlag', 'runFlag', 'speciesId', 'shinyValue'];
+  const missingFields = expectedFields.filter((field) => diagnostics?.raw.memory[field] === undefined);
+  const likelyIncorrectFields = [
+    ...(diagnostics?.derived.encounteredSpeciesId !== null && (diagnostics?.derived.encounteredSpeciesId ?? 0) < 0 ? ['encounteredSpeciesId(<0)'] : []),
+    ...(diagnostics?.derived.isShiny === true && !diagnostics?.derived.inBattle ? ['isShiny=true while not in battle'] : [])
+  ];
+  const backendSummary = !diagnostics?.connected || !diagnostics?.rpcConnected || unstableFields.length > 0 || missingFields.length > 0 || likelyIncorrectFields.length > 0
+    ? 'backend unstable'
+    : 'backend stable';
 
   if (!ready) {
     return <div className="loading">Loading Pokemon Shiny Hunt Assistant...</div>;
@@ -197,8 +295,37 @@ export function App() {
         {tab === 'Settings' && (
           <SettingsPanel settings={settings} setSettings={setSettings} onSave={onSaveSettings} />
         )}
+        {tab === 'Azahar Diagnostics' && (
+          <section className="panel">
+            <h2>Azahar Raw RPC Diagnostics</h2>
+            <p className="diag-line">Connection status: <strong>{diagnostics?.connected ? 'connected' : 'disconnected'}</strong></p>
+            <p className="diag-line">RPC connected: <strong>{diagnostics?.rpcConnected ? 'yes' : 'no'}</strong></p>
+            <p className="diag-line">Polled at: <strong>{diagnostics?.polledAt ? new Date(diagnostics.polledAt).toLocaleTimeString() : '-'}</strong></p>
+            <p className="diag-line">Last error: <strong>{diagnostics?.lastError ?? 'none'}</strong></p>
+            <p className="diag-line">Summary: <strong>{backendSummary}</strong></p>
+
+            <h3>Derived fields</h3>
+            <pre className="diag-pre">{JSON.stringify(diagnostics?.derived ?? {}, null, 2)}</pre>
+            <h3>Raw memory fields</h3>
+            <pre className="diag-pre">{JSON.stringify(diagnostics?.raw.memory ?? {}, null, 2)}</pre>
+            <h3>Raw status fields</h3>
+            <pre className="diag-pre">{JSON.stringify(diagnostics?.raw.status ?? {}, null, 2)}</pre>
+
+            <h3>Address labels + source</h3>
+            <pre className="diag-pre">{JSON.stringify(diagnostics?.fields ?? [], null, 2)}</pre>
+
+            <h3>Change log (latest 30)</h3>
+            <pre className="diag-pre">{JSON.stringify(diagnosticChangeLog, null, 2)}</pre>
+
+            <h3>Checks</h3>
+            <ul>
+              <li>fields missing: {missingFields.length ? missingFields.join(', ') : 'none'}</li>
+              <li>fields unstable while idle: {unstableFields.length ? unstableFields.join(', ') : 'none'}</li>
+              <li>fields likely incorrect: {likelyIncorrectFields.length ? likelyIncorrectFields.join(', ') : 'none'}</li>
+            </ul>
+          </section>
+        )}
       </main>
     </div>
   );
 }
-

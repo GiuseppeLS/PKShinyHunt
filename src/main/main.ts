@@ -4,7 +4,7 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage } from 'elect
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { IPC_CHANNELS, type AppInitPayload, type EmulatorPreviewFrame, type EmulatorWindowInfo } from '../shared/ipc';
+import { IPC_CHANNELS, type AppInitPayload, type AzaharDiagnosticPayload, type EmulatorPreviewFrame, type EmulatorWindowInfo } from '../shared/ipc';
 import { JsonStorageService } from '../storage/JsonStorage';
 import { defaultGameProfiles } from '../profiles/defaultProfiles';
 import { BasicShinyDetector } from '../services/ShinyDetector';
@@ -46,6 +46,7 @@ let previewLastError = '';
 let lastUiState: GameUiState = 'OVERWORLD';
 let lastRunAttemptAt = 0;
 let stateBackend: EmulatorStateBackend | null = null;
+let diagnosticBackend: AzaharMemoryStateBackend | null = null;
 let backendMismatchTicks = 0;
 const pokeApiService = new PokeApiPokemonService();
 
@@ -113,6 +114,71 @@ function getCaptureStatusPayload() {
     backendHealthy: stateBackend?.isHealthy() ?? false,
     backendLastError: stateBackend?.getLastError() ?? null
   };
+}
+
+async function pollAzaharDiagnosticSnapshot(): Promise<AzaharDiagnosticPayload> {
+  if (!diagnosticBackend) {
+    diagnosticBackend = new AzaharMemoryStateBackend();
+  }
+
+  try {
+    if (!diagnosticBackend.isHealthy()) {
+      await diagnosticBackend.connect();
+    }
+
+    const snapshot = await diagnosticBackend.pollState();
+    const memoryAddressLabels = diagnosticBackend.getMemoryAddressLabels();
+    const memoryRaw = (snapshot.raw?.memory ?? {}) as Record<string, unknown>;
+    const statusRaw = (snapshot.raw?.status ?? {}) as Record<string, unknown>;
+    const fields = Object.entries(memoryAddressLabels).map(([key, address]) => ({
+      key,
+      value: memoryRaw[key] ?? null,
+      addressLabel: `${key}Addr`,
+      addressHex: `0x${address.toString(16)}`,
+      source: 'memory.read_u32' as const
+    }));
+
+    return {
+      polledAt: new Date().toISOString(),
+      connected: true,
+      rpcConnected: diagnosticBackend.isHealthy(),
+      lastError: diagnosticBackend.getLastError(),
+      derived: {
+        inBattle: snapshot.inBattle,
+        commandMenuVisible: snapshot.commandMenuVisible,
+        canRun: snapshot.canRun,
+        encounteredSpeciesId: snapshot.encounteredSpeciesId,
+        isShiny: snapshot.isShiny,
+        state: snapshot.state
+      },
+      raw: {
+        status: statusRaw,
+        memory: memoryRaw
+      },
+      fields
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      polledAt: new Date().toISOString(),
+      connected: false,
+      rpcConnected: false,
+      lastError: message,
+      derived: {
+        inBattle: false,
+        commandMenuVisible: false,
+        canRun: false,
+        encounteredSpeciesId: null,
+        isShiny: null,
+        state: 'ERROR'
+      },
+      raw: {
+        status: {},
+        memory: {}
+      },
+      fields: []
+    };
+  }
 }
 
 function movementKeyToSendKeys(direction: string): string {
@@ -995,6 +1061,7 @@ async function bootstrap(): Promise<void> {
   });
 
   ipcMain.handle(IPC_CHANNELS.CAPTURE_STATUS, async () => getCaptureStatusPayload());
+  ipcMain.handle(IPC_CHANNELS.AZAHAR_DIAG_POLL, async () => pollAzaharDiagnosticSnapshot());
 
   ipcMain.handle(IPC_CHANNELS.EMULATOR_SAVE_FRAME, async () => {
     if (!lastPreviewFrame) {
@@ -1073,6 +1140,8 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   stopPreviewLoop();
   stopHuntLoop();
+  void diagnosticBackend?.disconnect();
+  diagnosticBackend = null;
   if (process.platform !== 'darwin') {
     app.quit();
   }

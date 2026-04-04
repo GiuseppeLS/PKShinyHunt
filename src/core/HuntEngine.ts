@@ -105,17 +105,32 @@ export class HuntEngine extends EventEmitter {
   async forceShiny(): Promise<HuntState> {
     const session = this.currentState.activeSession;
     if (!session) {
-      return this.currentState;
+      throw new Error('Start eerst een hunt voordat je Force Shiny gebruikt.');
     }
 
     const adapter = this.adapters.get(session.config.emulatorAdapterId);
-    if (!adapter?.forceShinyEncounter) {
-      return this.currentState;
-    }
+    const encounter = adapter?.forceShinyEncounter
+      ? await adapter.forceShinyEncounter()
+      : {
+        id: randomUUID(),
+        timestamp: new Date().toISOString(),
+        pokemonName: session.config.targetPokemon || 'Unknown',
+        encounterType: session.config.huntMode,
+        isShinyCandidate: true,
+        metadata: {
+          source: 'force-shiny-fallback'
+        }
+      };
 
-    const encounter = await adapter.forceShinyEncounter();
     if (encounter) {
-      await this.recordEncounter(encounter, adapter.id);
+      session.shinyFound = true;
+      session.shinyEncounter = encounter;
+      await this.recordEncounter(encounter, adapter?.id ?? session.config.emulatorAdapterId);
+      this.currentState.status = 'shiny_found';
+      if (this.currentState.activeSession) {
+        this.currentState.activeSession.status = 'shiny_found';
+      }
+      this.emitState();
     }
 
     return this.currentState;

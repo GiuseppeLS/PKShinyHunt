@@ -17,7 +17,8 @@ export const IPC_CHANNELS = {
   EMULATOR_STOP_PREVIEW: 'emulator:stopPreview',
   EMULATOR_PREVIEW_FRAME: 'emulator:previewFrame',
   EMULATOR_SAVE_FRAME: 'emulator:saveFrame',
-  CAPTURE_STATUS: 'capture:status'
+  CAPTURE_STATUS: 'capture:status',
+  AZAHAR_DIAG_POLL: 'azahar:diagPoll'
 } as const;
 
 export interface AppInitPayload {
@@ -38,7 +39,6 @@ export interface EmulatorPreviewFrame {
   capturedAt: string;
 }
 
-
 export interface CaptureStatusPayload {
   attached: boolean;
   captureMode: 'wgc' | 'fallback';
@@ -52,6 +52,34 @@ export interface CaptureStatusPayload {
   backendId?: string | null;
   backendHealthy?: boolean;
   backendLastError?: string | null;
+}
+
+export interface AzaharDiagnosticField {
+  key: string;
+  value: unknown;
+  addressLabel: string;
+  addressHex: string;
+  source: 'memory.read_u32';
+}
+
+export interface AzaharDiagnosticPayload {
+  polledAt: string;
+  connected: boolean;
+  rpcConnected: boolean;
+  lastError: string | null;
+  derived: {
+    inBattle: boolean;
+    commandMenuVisible: boolean;
+    canRun: boolean;
+    encounteredSpeciesId: number | null;
+    isShiny: boolean | null;
+    state: string;
+  };
+  raw: {
+    status: Record<string, unknown>;
+    memory: Record<string, unknown>;
+  };
+  fields: AzaharDiagnosticField[];
 }
 
 export interface ElectronApi {
@@ -71,5 +99,6 @@ export interface ElectronApi {
   stopEmulatorPreview(): Promise<{ running: boolean }>;
   saveCurrentPreviewFrame(): Promise<{ saved: boolean; filePath?: string }>;
   getCaptureStatus(): Promise<CaptureStatusPayload>;
+  pollAzaharDiagnostics(): Promise<AzaharDiagnosticPayload>;
   subscribeEmulatorPreview(listener: (frame: EmulatorPreviewFrame) => void): () => void;
 }

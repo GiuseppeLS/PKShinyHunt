@@ -69,3 +69,16 @@ input, select { border-radius: 10px; border: 1px solid #334155; background: #0f1
   border-radius: 8px;
   border: 1px solid #334155;
 }
+
+.diag-line { margin: 6px 0; }
+.diag-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
+.diag-table { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr; gap: 6px 10px; align-items: center; }
+.diag-row { display: contents; }
+.diag-pre {
+  max-height: 220px;
+  overflow: auto;
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 10px;
+}

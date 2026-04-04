@@ -23,6 +23,7 @@ const api: ElectronApi = {
   stopEmulatorPreview: () => ipcRenderer.invoke(IPC_CHANNELS.EMULATOR_STOP_PREVIEW),
   saveCurrentPreviewFrame: () => ipcRenderer.invoke(IPC_CHANNELS.EMULATOR_SAVE_FRAME),
   getCaptureStatus: () => ipcRenderer.invoke(IPC_CHANNELS.CAPTURE_STATUS),
+  pollAzaharDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.AZAHAR_DIAG_POLL),
   subscribeEmulatorPreview: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload as any);
     ipcRenderer.on(IPC_CHANNELS.EMULATOR_PREVIEW_FRAME, wrapped);

@@ -103,6 +103,16 @@ export class AzaharMemoryStateBackend implements EmulatorStateBackend {
     return this.lastError;
   }
 
+  getMemoryAddressLabels(): Record<string, number> {
+    return {
+      battleFlag: ORAS_US_V1_4_OFFSETS.battleFlagAddr,
+      menuFlag: ORAS_US_V1_4_OFFSETS.menuFlagAddr,
+      runFlag: ORAS_US_V1_4_OFFSETS.runFlagAddr,
+      speciesId: ORAS_US_V1_4_OFFSETS.speciesAddr,
+      shinyValue: ORAS_US_V1_4_OFFSETS.shinyValueAddr
+    };
+  }
+
   private async readMemoryFields(): Promise<Record<string, unknown>> {
     const read32 = async (address: number) =>
       this.rpc.call<number>('memory.read_u32', { address }).catch(() => 0);
