@@ -103,6 +103,21 @@ export class HuntEngine extends EventEmitter {
   }
 
   async forceShiny(): Promise<HuntState> {
+    const session = this.currentState.activeSession;
+    if (!session) {
+      return this.currentState;
+    }
+
+    const adapter = this.adapters.get(session.config.emulatorAdapterId);
+    if (!adapter?.forceShinyEncounter) {
+      return this.currentState;
+    }
+
+    const encounter = await adapter.forceShinyEncounter();
+    if (encounter) {
+      await this.recordEncounter(encounter, adapter.id);
+    }
+
     return this.currentState;
   }
 

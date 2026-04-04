@@ -16,7 +16,8 @@ export const IPC_CHANNELS = {
   EMULATOR_START_PREVIEW: 'emulator:startPreview',
   EMULATOR_STOP_PREVIEW: 'emulator:stopPreview',
   EMULATOR_PREVIEW_FRAME: 'emulator:previewFrame',
-  EMULATOR_SAVE_FRAME: 'emulator:saveFrame'
+  EMULATOR_SAVE_FRAME: 'emulator:saveFrame',
+  CAPTURE_STATUS: 'capture:status'
 } as const;
 
 export interface AppInitPayload {
@@ -37,6 +38,22 @@ export interface EmulatorPreviewFrame {
   capturedAt: string;
 }
 
+
+export interface CaptureStatusPayload {
+  attached: boolean;
+  captureMode: 'wgc' | 'fallback';
+  windowTitle: string | null;
+  nativeHandle: number | null;
+  frameValidationOk: boolean;
+  lastCaptureSucceeded: boolean;
+  lastCaptureMethod: 'wgc' | 'fallback' | null;
+  previewRunning: boolean;
+  huntLoopRunning: boolean;
+  backendId?: string | null;
+  backendHealthy?: boolean;
+  backendLastError?: string | null;
+}
+
 export interface ElectronApi {
   init(): Promise<AppInitPayload>;
   startHunt(config: HuntConfig): Promise<HuntState>;
@@ -53,6 +70,6 @@ export interface ElectronApi {
   startEmulatorPreview(): Promise<{ running: boolean }>;
   stopEmulatorPreview(): Promise<{ running: boolean }>;
   saveCurrentPreviewFrame(): Promise<{ saved: boolean; filePath?: string }>;
+  getCaptureStatus(): Promise<CaptureStatusPayload>;
   subscribeEmulatorPreview(listener: (frame: EmulatorPreviewFrame) => void): () => void;
 }
-

@@ -58,7 +58,8 @@ export function useAppState() {
       enableAutoMovement: true,
       movementPattern: 'left_right',
       movementStepMs: 120,
-      movementIntervalMs: 900,
+      movementKeyHoldMs: 180,
+      movementIntervalMs: 1050,
       movementResumeCooldownMs: 1200
     };
   }, [profiles, settings]);

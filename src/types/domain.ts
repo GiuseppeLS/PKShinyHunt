@@ -45,6 +45,7 @@ export interface HuntConfig {
   screenshotFolder: string;
   enableAutoMovement?: boolean;
   movementPattern?: 'left_right' | 'up_down';
+  movementKeyHoldMs?: number;
   movementStepMs?: number;
   movementIntervalMs?: number;
   movementResumeCooldownMs?: number;
@@ -77,4 +78,3 @@ export interface HuntState {
   elapsedMs: number;
   lastEncounter?: EncounterInfo;
 }
-
