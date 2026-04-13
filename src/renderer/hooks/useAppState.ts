@@ -50,7 +50,7 @@ export function useAppState() {
       targetPokemon: 'Ralts',
       gameProfileId: settings?.defaultGameProfileId || defaultProfile,
       huntMode: 'random_encounters',
-      emulatorAdapterId: 'citra',
+      emulatorAdapterId: 'bizhawk',
       saveScreenshots: settings?.saveScreenshots ?? true,
       autoPauseOnShiny: settings?.autoPauseOnShiny ?? true,
       enableDiscordNotifications: Boolean(settings?.discordWebhookUrl),

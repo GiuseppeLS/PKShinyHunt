@@ -16,4 +16,15 @@ export class AzaharAdapter implements EmulatorAdapter {
   onEncounter(_listener: (encounter: EncounterInfo) => void): void {
     // Future: parse live encounters.
   }
+
+  async getHealth() {
+    return {
+      emulatorRunning: true,
+      executableOk: true,
+      romOk: true,
+      bridgeConnected: true,
+      adapter: this.id,
+      reason: 'azahar-stub-health'
+    };
+  }
 }

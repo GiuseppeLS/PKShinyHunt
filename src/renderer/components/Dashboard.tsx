@@ -62,12 +62,12 @@ export function Dashboard({
         <button onClick={onTestNotification}>Test Notification</button>
       </div>
 
-      <h3 style={{ marginTop: 24 }}>Citra Emulator Integration</h3>
+      <h3 style={{ marginTop: 24 }}>BizHawk Bridge Connection</h3>
       <div className="form-grid">
         <label>
-          Detected Citra windows
+          Detected BizHawk windows
           <select value={selectedEmulatorId} onChange={(e) => onSelectEmulator(e.target.value)}>
-            <option value="">Select Citra window...</option>
+            <option value="">Select BizHawk window...</option>
             {emulatorWindows.map((window) => (
               <option key={window.id} value={window.id}>
                 {window.title}
@@ -89,7 +89,7 @@ export function Dashboard({
 
       <div className="preview-box">
         {!previewDataUrl && <p>No preview frame yet. Attach and start preview.</p>}
-        {previewDataUrl && <img src={previewDataUrl} alt="Citra preview frame" />}
+        {previewDataUrl && <img src={previewDataUrl} alt="BizHawk preview frame" />}
       </div>
     </section>
   );

@@ -26,9 +26,8 @@ export function HuntConfigPanel({ config, setConfig, profiles }: Props) {
         </label>
         <label>Emulator Adapter
           <select value={config.emulatorAdapterId} onChange={(e) => setConfig({ ...config, emulatorAdapterId: e.target.value })}>
+            <option value="bizhawk">BizHawkAdapter (Pokemon Emerald)</option>
             <option value="mock">MockEmulatorAdapter</option>
-            <option value="azahar">AzaharAdapter (stub)</option>
-            <option value="citra">CitraAdapter (stub)</option>
           </select>
         </label>
       </div>

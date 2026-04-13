@@ -9,7 +9,15 @@ const defaultSettings: Settings = {
   screenshotFolder: path.join(app.getPath('pictures'), 'PokemonShinyHuntAssistant'),
   defaultGameProfileId: 'oras-starters',
   autoPauseOnShiny: true,
-  saveScreenshots: true
+  saveScreenshots: true,
+  bizhawk: {
+    bizhawkExePath: '',
+    emeraldRomPath: '',
+    tcpHost: '127.0.0.1',
+    tcpPort: 17374,
+    autoLaunchBizHawk: false,
+    autoAttachBizHawk: true
+  }
 };
 
 interface DatabaseShape {

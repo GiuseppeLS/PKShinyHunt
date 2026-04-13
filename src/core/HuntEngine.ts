@@ -1,7 +1,10 @@
 ﻿import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { EmulatorAdapter, NotificationProvider, ScreenshotService, ShinyDetector, SessionRepository } from '../types/interfaces';
+import type { EmulatorAdapter, EmulatorHealth, NotificationProvider, ScreenshotService, ShinyDetector, SessionRepository } from '../types/interfaces';
 import type { EncounterInfo, GameProfile, HuntConfig, HuntSession, HuntState, HuntStatus, Settings } from '../types/domain';
+
+type EnginePhaseStatus = 'attached' | 'searching' | 'encounter_start' | 'in_battle' | 'analyzing' | 'error';
+const VALID_STATUSES = ['idle', 'attached', 'searching', 'encounter_start', 'in_battle', 'analyzing', 'shiny_found', 'paused', 'error'] as const;
 
 export class HuntEngine extends EventEmitter {
   private currentState: HuntState = {
@@ -11,6 +14,9 @@ export class HuntEngine extends EventEmitter {
   };
 
   private elapsedInterval: NodeJS.Timeout | null = null;
+  private watchdogInterval: NodeJS.Timeout | null = null;
+  private encounterStartedAt = 0;
+  private emulatorHealth: EmulatorHealth | null = null;
 
   constructor(
     private readonly adapters: Map<string, EmulatorAdapter>,
@@ -33,7 +39,7 @@ export class HuntEngine extends EventEmitter {
   }
 
   setStatus(status: HuntStatus, errorMessage?: string): HuntState {
-    this.currentState.status = status;
+    this.transitionTo(status, errorMessage ?? 'setStatus');
     if (errorMessage && this.currentState.activeSession) {
       this.currentState.activeSession.errorMessage = errorMessage;
     }
@@ -73,6 +79,7 @@ export class HuntEngine extends EventEmitter {
     };
 
     this.startElapsedTicker();
+    this.startWatchdog();
     this.emitState();
     return this.currentState;
   }
@@ -84,6 +91,7 @@ export class HuntEngine extends EventEmitter {
     }
 
     this.stopElapsedTicker();
+    this.stopWatchdog();
     this.currentState = {
       status: 'idle',
       activeSession: session,
@@ -97,6 +105,7 @@ export class HuntEngine extends EventEmitter {
   async reset(): Promise<HuntState> {
     await this.finalizeCurrentSession('idle');
     this.stopElapsedTicker();
+    this.stopWatchdog();
     this.currentState = { status: 'idle', activeSession: null, elapsedMs: 0 };
     this.emitState();
     return this.currentState;
@@ -126,7 +135,7 @@ export class HuntEngine extends EventEmitter {
       session.shinyFound = true;
       session.shinyEncounter = encounter;
       await this.recordEncounter(encounter, adapter?.id ?? session.config.emulatorAdapterId);
-      this.currentState.status = 'shiny_found';
+      this.transitionTo('shiny_found', 'force-shiny');
       if (this.currentState.activeSession) {
         this.currentState.activeSession.status = 'shiny_found';
       }
@@ -148,20 +157,66 @@ export class HuntEngine extends EventEmitter {
 
     session.encounterCount += 1;
     session.status = 'encounter_start';
-    this.currentState.status = 'encounter_start';
     this.currentState.lastEncounter = encounter;
     this.currentState.activeSession = session;
+    this.transitionTo('encounter_start', 'encounter-recorded');
     this.emitState();
   }
 
-  markBattlePhase(status: Extract<HuntStatus, 'attached' | 'searching' | 'encounter_start' | 'in_battle' | 'analyzing' | 'error'>): void {
+  markBattlePhase(status: EnginePhaseStatus): void {
     const session = this.currentState.activeSession;
     if (session) {
-      session.status = status;
+      session.status = status as HuntStatus;
       this.currentState.activeSession = session;
     }
-    this.currentState.status = status;
+    this.transitionTo(status as HuntStatus, 'battle-phase-update');
     this.emitState();
+  }
+
+  updateEmulatorHealth(health: EmulatorHealth): { ok: boolean; reason: string } {
+    this.emulatorHealth = health;
+    const ok = health.emulatorRunning && health.executableOk && health.romOk && health.bridgeConnected;
+    const reason = ok ? 'health-ok' : (health.reason ?? 'health-check-failed');
+
+    if (!ok) {
+      this.forceIdleFromHealth(reason);
+      return { ok, reason };
+    }
+
+    if (this.currentState.activeSession && this.currentState.status === 'encounter_start') {
+      const analyzingStatus = 'analyzing' as unknown as HuntStatus;
+      this.transitionTo(analyzingStatus, 'encounter-health-ok');
+      this.emitState();
+    }
+
+    return { ok, reason };
+  }
+
+  async getAdapterHealth(adapterId: string): Promise<EmulatorHealth> {
+    const adapter = this.adapters.get(adapterId);
+    if (!adapter) {
+      return {
+        emulatorRunning: false,
+        executableOk: false,
+        romOk: false,
+        bridgeConnected: false,
+        adapter: adapterId,
+        reason: 'adapter-not-found'
+      };
+    }
+
+    if (!adapter.getHealth) {
+      return {
+        emulatorRunning: true,
+        executableOk: true,
+        romOk: true,
+        bridgeConnected: true,
+        adapter: adapterId,
+        reason: 'adapter-health-not-implemented'
+      };
+    }
+
+    return adapter.getHealth();
   }
 
   private startElapsedTicker(): void {
@@ -183,8 +238,63 @@ export class HuntEngine extends EventEmitter {
     }
   }
 
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    this.watchdogInterval = setInterval(() => {
+      if (!this.currentState.activeSession) {
+        return;
+      }
+
+      if (!VALID_STATUSES.includes(this.currentState.status as (typeof VALID_STATUSES)[number])) {
+        this.forceIdleFromHealth('invalid-state');
+        return;
+      }
+
+      const encounterStuck = this.currentState.status === 'encounter_start'
+        && this.encounterStartedAt > 0
+        && Date.now() - this.encounterStartedAt > 3000;
+
+      if (encounterStuck) {
+        this.forceIdleFromHealth('encounter-start-timeout');
+      }
+    }, 1000);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
+  }
+
   private emitState(): void {
     this.emit('stateChanged', this.currentState);
+  }
+
+  private forceIdleFromHealth(reason: string): void {
+    if (this.currentState.activeSession) {
+      this.currentState.activeSession.status = 'idle';
+    }
+    this.transitionTo('idle', reason);
+    this.emitState();
+  }
+
+  private transitionTo(nextStatus: HuntStatus, reason: string): void {
+    const previousStatus = this.currentState.status;
+    this.currentState.status = nextStatus;
+    this.encounterStartedAt = nextStatus === 'encounter_start' ? Date.now() : 0;
+
+    console.log(JSON.stringify({
+      scope: 'hunt-engine',
+      event: 'state-transition',
+      from: previousStatus,
+      to: nextStatus,
+      reason,
+      emulator: this.emulatorHealth,
+      detectedSpecies: this.currentState.lastEncounter?.pokemonName ?? null,
+      shinyResult: this.currentState.lastEncounter?.isShinyCandidate ?? null,
+      at: new Date().toISOString()
+    }));
   }
 
   private async finalizeCurrentSession(forceStatus?: HuntState['status']): Promise<HuntSession | null> {

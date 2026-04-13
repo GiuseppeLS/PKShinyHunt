@@ -16,4 +16,15 @@ export class CitraAdapter implements EmulatorAdapter {
   onEncounter(_listener: (encounter: EncounterInfo) => void): void {
     // Future: register memory-parsed encounter callback.
   }
+
+  async getHealth() {
+    return {
+      emulatorRunning: true,
+      executableOk: true,
+      romOk: true,
+      bridgeConnected: true,
+      adapter: this.id,
+      reason: 'citra-stub-health'
+    };
+  }
 }

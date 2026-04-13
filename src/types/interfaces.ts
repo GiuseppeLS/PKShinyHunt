@@ -7,6 +7,16 @@ export interface EmulatorAdapter {
   stop(): Promise<void>;
   onEncounter(listener: (encounter: EncounterInfo) => void): void;
   forceShinyEncounter?(): Promise<EncounterInfo | null>;
+  getHealth?(): Promise<EmulatorHealth>;
+}
+
+export interface EmulatorHealth {
+  emulatorRunning: boolean;
+  executableOk: boolean;
+  romOk: boolean;
+  bridgeConnected: boolean;
+  adapter: string;
+  reason?: string;
 }
 
 export interface NotificationProvider {

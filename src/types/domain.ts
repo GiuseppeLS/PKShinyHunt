@@ -3,8 +3,10 @@
   | 'attached'
   | 'searching'
   | 'encounter_start'
-  | 'in_battle'
-  | 'analyzing'
+  | 'battle_ready'
+  | 'evaluating_pokemon'
+  | 'running_from_battle'
+  | 'recovering'
   | 'shiny_found'
   | 'paused'
   | 'error';
@@ -70,11 +72,26 @@ export interface Settings {
   defaultGameProfileId: string;
   autoPauseOnShiny: boolean;
   saveScreenshots: boolean;
+  bizhawk?: {
+    bizhawkExePath: string;
+    emeraldRomPath: string;
+    tcpHost: string;
+    tcpPort: number;
+    autoLaunchBizHawk: boolean;
+    autoAttachBizHawk: boolean;
+  };
 }
 
 export interface HuntState {
   status: HuntStatus;
   activeSession: HuntSession | null;
   elapsedMs: number;
+  statusSince?: string;
   lastEncounter?: EncounterInfo;
+  lastSpeciesId?: number | null;
+  lastSpeciesName?: string | null;
+  lastShinyResult?: boolean | null;
+  lastError?: string | null;
+  movementActive?: boolean;
+  stateSource?: string | null;
 }

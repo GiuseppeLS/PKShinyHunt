@@ -51,7 +51,7 @@ export function AzaharDiagnosticsPanel({
       <p className="diag-line">Polled at: <strong>{payload?.polledAt ? new Date(payload.polledAt).toLocaleTimeString() : '-'}</strong></p>
       <p className="diag-line">Last error: <strong>{payload?.lastError ?? 'none'}</strong></p>
 
-      <h3>Derived raw flags</h3>
+      <h3>Derived backend state</h3>
       <div className="diag-grid">
         <div className="card"><p>inBattle</p><strong>{String(payload?.derived.inBattle ?? false)}</strong></div>
         <div className="card"><p>commandMenuVisible</p><strong>{String(payload?.derived.commandMenuVisible ?? false)}</strong></div>
@@ -59,6 +59,8 @@ export function AzaharDiagnosticsPanel({
         <div className="card"><p>encounteredSpeciesId</p><strong>{String(payload?.derived.encounteredSpeciesId ?? null)}</strong></div>
         <div className="card"><p>isShiny</p><strong>{String(payload?.derived.isShiny ?? null)}</strong></div>
         <div className="card"><p>state</p><strong>{payload?.derived.state ?? '-'}</strong></div>
+        <div className="card"><p>backendStatus</p><strong>{payload?.derived.backendStatus ?? '-'}</strong></div>
+        <div className="card"><p>stateReason</p><strong>{payload?.derived.stateReason ?? '-'}</strong></div>
       </div>
 
       <h3>Raw memory fields (from Azahar)</h3>
@@ -81,6 +83,12 @@ export function AzaharDiagnosticsPanel({
 
       <h3>Raw status payload</h3>
       <pre className="diag-pre">{JSON.stringify(payload?.raw.status ?? {}, null, 2)}</pre>
+
+      <h3>State reasoning payload</h3>
+      <pre className="diag-pre">{JSON.stringify(payload?.raw.reasoning ?? {}, null, 2)}</pre>
+
+      <h3>Memory-map notes</h3>
+      <pre className="diag-pre">{JSON.stringify(payload?.raw.mapNotes ?? [], null, 2)}</pre>
 
       <h3>Change log (latest 30)</h3>
       <div className="history-list">

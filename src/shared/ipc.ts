@@ -74,6 +74,8 @@ export interface AzaharDiagnosticPayload {
     encounteredSpeciesId: number | null;
     isShiny: boolean | null;
     state: string;
+    backendStatus?: string;
+    stateReason?: string;
   };
   raw: {
     status: Record<string, unknown>;

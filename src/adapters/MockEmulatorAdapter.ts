@@ -36,6 +36,18 @@ export class MockEmulatorAdapter implements EmulatorAdapter {
     return encounter;
   }
 
+  async getHealth() {
+    const emulatorRunning = this.intervalRef !== null;
+    return {
+      emulatorRunning,
+      executableOk: true,
+      romOk: true,
+      bridgeConnected: emulatorRunning,
+      adapter: this.id,
+      reason: emulatorRunning ? 'mock-running' : 'mock-not-started'
+    };
+  }
+
   private generateEncounter(forceShiny: boolean): EncounterInfo {
     const target = this.activeConfig?.targetPokemon;
     const name = Math.random() > 0.6 && target ? target : pokemonPool[Math.floor(Math.random() * pokemonPool.length)];
@@ -60,4 +72,3 @@ export class MockEmulatorAdapter implements EmulatorAdapter {
     }
   }
 }
-
