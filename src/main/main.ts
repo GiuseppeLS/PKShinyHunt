@@ -15,6 +15,7 @@ import { CitraAdapter } from '../adapters/CitraAdapter';
 import { AzaharAdapter } from '../adapters/AzaharAdapter';
 import { HuntEngine } from '../core/HuntEngine';
 import type { EncounterInfo, HuntConfig, Settings } from '../types/domain';
+import type { EmulatorHealth } from '../types/interfaces';
 import { AzaharMemoryStateBackend } from './state/AzaharMemoryStateBackend';
 import { ScreenStateBackend } from './state/ScreenStateBackend';
 import { PokeApiPokemonService } from './state/PokeApiPokemonService';
@@ -722,6 +723,49 @@ function stopHuntLoop() {
   backendMismatchTicks = 0;
 }
 
+function readStatusBoolean(status: Record<string, unknown>, ...keys: string[]): boolean | null {
+  for (const key of keys) {
+    if (typeof status[key] === 'boolean') {
+      return status[key] as boolean;
+    }
+  }
+  return null;
+}
+
+async function buildEmulatorHealth(engine: HuntEngine, config: HuntConfig, snapshot: PokemonGameStateSnapshot): Promise<EmulatorHealth> {
+  const adapterHealth = await engine.getAdapterHealth(config.emulatorAdapterId);
+  const backendHealthy = stateBackend?.isHealthy() ?? false;
+  const statusRaw = (snapshot.raw?.status ?? {}) as Record<string, unknown>;
+
+  const statusRunning = readStatusBoolean(statusRaw, 'emulatorRunning', 'running');
+  const statusExecutableOk = readStatusBoolean(statusRaw, 'executableOk');
+  const statusRomOk = readStatusBoolean(statusRaw, 'romOk');
+  const statusBridgeConnected = readStatusBoolean(statusRaw, 'bridgeConnected', 'connected');
+
+  const bridgeConnected = (statusBridgeConnected ?? adapterHealth.bridgeConnected) && backendHealthy;
+  const executableOk = (statusExecutableOk ?? adapterHealth.executableOk) && Boolean(attachedEmulatorSourceId) && frameValidationOk;
+  const romOk = (statusRomOk ?? adapterHealth.romOk) && snapshot.state !== 'ERROR' && snapshot.state !== 'UNKNOWN';
+  const emulatorRunning = (statusRunning ?? adapterHealth.emulatorRunning) && Boolean(attachedEmulatorSourceId) && lastCaptureSucceeded;
+  const reason = !emulatorRunning
+    ? 'emulator-not-running'
+    : !executableOk
+      ? 'executable-check-failed'
+      : !romOk
+        ? 'rom-or-game-state-invalid'
+        : !bridgeConnected
+          ? 'bridge-not-connected'
+          : 'health-ok';
+
+  return {
+    emulatorRunning,
+    executableOk,
+    romOk,
+    bridgeConnected,
+    adapter: config.emulatorAdapterId,
+    reason
+  };
+}
+
 function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
   if (!attachedEmulatorSourceId) {
     throw new Error('Attach eerst een Citra-window voor je start.');
@@ -752,6 +796,24 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
       if (!backend) {
         throw new Error('State backend unavailable during hunt tick');
       }
+
+      if (config.emulatorAdapterId === 'bizhawk' && !backend.isHealthy()) {
+        const offlineHealth = engine.updateEmulatorHealth({
+          emulatorRunning: false,
+          executableOk: false,
+          romOk: false,
+          bridgeConnected: false,
+          adapter: 'bizhawk',
+          reason: backend.getLastError() ?? 'bizhawk-backend-not-healthy'
+        });
+        logInfo('Skipping memory read because BizHawk backend is not healthy', {
+          reason: offlineHealth.reason,
+          backendError: backend.getLastError()
+        });
+        stopMovementEngine('bizhawk-backend-offline');
+        return;
+      }
+
       const memorySnapshot = await backend.pollState();
       const screenSnapshot = buildScreenSnapshot(frame.dataUrl);
       let snapshot = memorySnapshot;
@@ -785,6 +847,26 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
       }
 
       const uiState = snapshot.state;
+      const emulatorHealth = await buildEmulatorHealth(engine, config, snapshot);
+      const healthResult = engine.updateEmulatorHealth(emulatorHealth);
+      if (!healthResult.ok) {
+        logInfo('Emulator health check failed; forcing idle', { reason: healthResult.reason, emulatorHealth });
+        huntVision.inBattle = false;
+        huntVision.quietFrames = 0;
+        huntVision.analyzingLogged = false;
+        stopMovementEngine('emulator-health-failed');
+        lastUiState = uiState;
+        return;
+      }
+
+      logInfo('Game state debug', {
+        adapter: config.emulatorAdapterId,
+        inBattle: snapshot.inBattle,
+        encounterDetected: uiState === 'BATTLE' || uiState === 'COMMAND_MENU' || uiState === 'RUN_AVAILABLE',
+        detectionValue: Number((snapshot.confidence ?? 0).toFixed(3)),
+        bridgeConnected: emulatorHealth.bridgeConnected,
+        emulatorRunning: emulatorHealth.emulatorRunning
+      });
       if (uiState !== lastUiState) {
         logInfo('Resolved game state changed', { from: lastUiState, to: uiState, source: snapshot.source });
       }
@@ -800,6 +882,14 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
         logInfo('Encounter detected', { uiState });
 
         engine.markBattlePhase('encounter_start');
+        const postEncounterHealth = engine.updateEmulatorHealth(emulatorHealth);
+        if (!postEncounterHealth.ok) {
+          logInfo('Encounter start aborted due to emulator health', { reason: postEncounterHealth.reason, emulatorHealth });
+          huntVision.inBattle = false;
+          stopMovementEngine('encounter-health-failed');
+          return;
+        }
+
         const debugPath = await saveDebugFrame(frame, 'encounter-start');
 
         const speciesLookup = snapshot.encounteredSpeciesId
@@ -824,7 +914,9 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
         };
 
         await engine.recordEncounter(encounter, config.emulatorAdapterId);
-        engine.markBattlePhase('in_battle');
+        if (engine.getState().status !== 'idle') {
+          engine.markBattlePhase('in_battle');
+        }
       }
 
       if (huntVision.inBattle) {
@@ -867,9 +959,12 @@ function startHuntLoop(engine: HuntEngine, config: HuntConfig) {
             resumeAfterMs: config.movementResumeCooldownMs ?? 1200
           });
         }
+      } else if (uiState === 'OVERWORLD' && engine.getState().status === 'idle') {
+        startMovementEngine(config);
+        engine.markBattlePhase('searching');
       } else if (uiState === 'OVERWORLD' && engine.getState().status !== 'searching') {
         engine.markBattlePhase('searching');
-      } else if (engine.getState().status === 'analyzing') {
+      } else if (String(engine.getState().status) === 'analyzing') {
         engine.markBattlePhase('searching');
       }
 
@@ -893,7 +988,8 @@ async function bootstrap(): Promise<void> {
   const adapters = new Map([
     ['mock', new MockEmulatorAdapter()],
     ['citra', new CitraAdapter()],
-    ['azahar', new AzaharAdapter()]
+    ['azahar', new AzaharAdapter()],
+    ['bizhawk', new AzaharAdapter()]
   ]);
 
   const engine = new HuntEngine(
@@ -921,7 +1017,7 @@ async function bootstrap(): Promise<void> {
   }));
 
   ipcMain.handle(IPC_CHANNELS.HUNT_START, async (_event, config: HuntConfig) => {
-    if (config.emulatorAdapterId === 'citra') {
+    if (config.emulatorAdapterId === 'citra' || config.emulatorAdapterId === 'bizhawk') {
       if (!attachedEmulatorSourceId) {
         throw new Error('Attach a Citra window before starting hunt.');
       }
@@ -936,12 +1032,12 @@ async function bootstrap(): Promise<void> {
     }
 
     activeLoopConfig = config;
-    if (config.emulatorAdapterId === 'citra' || config.emulatorAdapterId === 'azahar') {
+    if (config.emulatorAdapterId === 'citra' || config.emulatorAdapterId === 'azahar' || config.emulatorAdapterId === 'bizhawk') {
       await initializeStateBackend();
     }
 
     const state = await engine.start(config);
-    if (config.emulatorAdapterId === 'citra' || config.emulatorAdapterId === 'azahar') {
+    if (config.emulatorAdapterId === 'citra' || config.emulatorAdapterId === 'azahar' || config.emulatorAdapterId === 'bizhawk') {
       startHuntLoop(engine, config);
     }
     return state;
